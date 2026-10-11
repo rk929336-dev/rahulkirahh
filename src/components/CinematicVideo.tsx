@@ -16,18 +16,7 @@ export default function CinematicVideo() {
   const [isReducedMotion, setIsReducedMotion] = useState<boolean>(false);
   const [isTouchOrSmall, setIsTouchOrSmall] = useState<boolean>(false);
 
-  // Temporary On-Screen Debug Telemetry State
-  const [debugTelemetry, setDebugTelemetry] = useState<{
-    readyState: number;
-    duration: number;
-    currentTime: number;
-    targetTime: number;
-  }>({
-    readyState: 0,
-    duration: 0,
-    currentTime: 0,
-    targetTime: 0,
-  });
+
 
 
   // 1. Reduced Motion & Touch Detection
@@ -59,11 +48,6 @@ export default function CinematicVideo() {
     if (!isReducedMotion) {
       video.play().catch(() => {});
     }
-    setDebugTelemetry((prev) => ({
-      ...prev,
-      readyState: video.readyState,
-      duration: video.duration || 0,
-    }));
   };
 
   // Perform seek throttled to ~30fps so hardware decoder is never thrash-spammed
@@ -171,9 +155,7 @@ export default function CinematicVideo() {
     window.addEventListener("scroll", handleScroll, { passive: true });
 
     // 4. LERP Loop in RAF
-    let lastDebugUpdate = 0;
-
-    const loop = (now: number) => {
+    const loop = () => {
       const video = videoRef.current;
       if (video) {
         if (readyRef.current && video.duration) {
@@ -185,17 +167,6 @@ export default function CinematicVideo() {
             // When ambiently playing, keep reference time in sync
             currentRef.current = video.currentTime;
           }
-        }
-
-        // Throttle debug HUD updates to ~10fps
-        if (now - lastDebugUpdate > 100) {
-          lastDebugUpdate = now;
-          setDebugTelemetry({
-            readyState: video.readyState,
-            duration: video.duration || 0,
-            currentTime: video.currentTime || 0,
-            targetTime: targetRef.current,
-          });
         }
       }
 
@@ -217,29 +188,6 @@ export default function CinematicVideo() {
       {/* Ambient electric-blue scroll progress bar (height 2px) */}
       <div ref={progressBarRef} className="scroll-progress-bar" />
 
-      {/* Temporary On-Screen Debug Telemetry Label */}
-      <div className="fixed bottom-5 left-5 z-50 bg-obsidian-950/90 border border-blue-500/40 text-slate-200 font-mono text-[11px] p-3 rounded-xl backdrop-blur-md shadow-[0_0_30px_rgba(0,0,0,0.85)] pointer-events-auto select-none space-y-1">
-        <div className="flex items-center gap-2 border-b border-white/10 pb-1 mb-1 font-bold text-white tracking-wider">
-          <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
-          <span>VIDEO TELEMETRY HUD</span>
-        </div>
-        <div>
-          readyState:{" "}
-          <span className="font-bold text-emerald-400">{debugTelemetry.readyState}</span>
-        </div>
-        <div>
-          duration:{" "}
-          <span className="font-bold text-white">{debugTelemetry.duration.toFixed(2)}s</span>
-        </div>
-        <div>
-          currentTime:{" "}
-          <span className="font-bold text-yellow-400">{debugTelemetry.currentTime.toFixed(3)}s</span>
-        </div>
-        <div>
-          targetTime:{" "}
-          <span className="font-bold text-blue-400">{debugTelemetry.targetTime.toFixed(3)}s</span>
-        </div>
-      </div>
 
       {/* Fixed background viewport positioned behind content (z-0) */}
       <div className="fixed inset-0 w-full h-full overflow-hidden pointer-events-none z-0">
