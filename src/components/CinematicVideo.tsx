@@ -29,10 +29,6 @@ export default function CinematicVideo() {
     targetTime: 0,
   });
 
-  // Seek Queue Refs to eliminate decoder thrashing & frame hallucination
-  const isSeekingRef = useRef<boolean>(false);
-  const pendingTimeRef = useRef<number | null>(null);
-  const lastSeekTimeRef = useRef<number>(0);
 
   // 1. Reduced Motion & Touch Detection
   useEffect(() => {
@@ -59,10 +55,10 @@ export default function CinematicVideo() {
     const video = videoRef.current;
     if (!video) return;
     readyRef.current = true;
-    video.pause();
-    try {
-      video.currentTime = 0;
-    } catch {}
+    // Ensure video is actively playing smoothly in ambient background
+    if (!isReducedMotion) {
+      video.play().catch(() => {});
+    }
     setDebugTelemetry((prev) => ({
       ...prev,
       readyState: video.readyState,
@@ -70,51 +66,27 @@ export default function CinematicVideo() {
     }));
   };
 
-  // Perform seek with decoder queue guard
+  // Perform seek throttled to ~30fps so hardware decoder is never thrash-spammed
+  const lastSeekTimeRef = useRef<number>(0);
+
   const performSeek = (targetTime: number) => {
     const video = videoRef.current;
-    if (!video || !readyRef.current || !video.duration) return;
+    if (!video || !video.duration) return;
 
-    const duration = video.duration;
-    const clampedTime = Math.max(0, Math.min(targetTime, duration - 0.05));
+    const now = performance.now();
+    if (now - lastSeekTimeRef.current < 33) return;
 
-    // If hardware decoder is currently busy seeking, store as pending and DO NOT interrupt
-    if (video.seeking || isSeekingRef.current) {
-      pendingTimeRef.current = clampedTime;
-      return;
-    }
+    const clampedTime = Math.max(0, Math.min(targetTime, video.duration - 0.05));
+    if (Math.abs(video.currentTime - clampedTime) < 0.03) return;
 
-    // Guard against micro-seek thrash: skip if delta is under ~half a frame (< 0.02s)
-    if (Math.abs(video.currentTime - clampedTime) < 0.02) {
-      return;
-    }
-
-    isSeekingRef.current = true;
-    lastSeekTimeRef.current = performance.now();
-
+    lastSeekTimeRef.current = now;
     try {
       if ("fastSeek" in video && typeof (video as any).fastSeek === "function") {
         (video as any).fastSeek(clampedTime);
       } else {
         video.currentTime = clampedTime;
       }
-    } catch {
-      isSeekingRef.current = false;
-    }
-  };
-
-  const handleSeeked = () => {
-    isSeekingRef.current = false;
-    // Dispatch queued seek immediately after previous decode completes
-    if (pendingTimeRef.current !== null) {
-      const nextTime = pendingTimeRef.current;
-      pendingTimeRef.current = null;
-      performSeek(nextTime);
-    }
-  };
-
-  const handleSeeking = () => {
-    isSeekingRef.current = true;
+    } catch {}
   };
 
   // 3. Scroll & Mouse Tracking Engine
@@ -123,6 +95,8 @@ export default function CinematicVideo() {
 
     let cursorX = 0.5;
     let cursorY = 0.5;
+    let isScrolling = false;
+    let scrollDebounceTimer: NodeJS.Timeout | null = null;
 
     const updateTargetTime = () => {
       const video = videoRef.current;
@@ -139,10 +113,9 @@ export default function CinematicVideo() {
 
       if (duration > 0) {
         if (isTouchOrSmall) {
-          // Mobile / Touch: smooth 1:1 scroll scrubbing
           targetRef.current = scrollProgress * duration;
         } else {
-          // Desktop: Scroll drives full story timeline; cursor X adds ±8% interactive 3D turntable micro-rotation
+          // Desktop: scroll provides full journey; cursor X provides ±8% 3D turntable bias
           const cursorParallaxBias = (cursorX - 0.5) * 0.16;
           const combinedProgress = Math.min(Math.max(scrollProgress + cursorParallaxBias, 0), 1);
           targetRef.current = combinedProgress * duration;
@@ -158,16 +131,15 @@ export default function CinematicVideo() {
       cursorX = normX;
       cursorY = normY;
 
-      // Cursor dx, dy: -0.5 to 0.5
       const dx = normX - 0.5;
       const dy = normY - 0.5;
 
-      // Interactive parallax tilt
+      // Parallax 3D tilt
       if (containerRef.current) {
         containerRef.current.style.transform = `scale(1.06) translate3d(${dx * -15}px, ${dy * -15}px, 0) rotateX(${dy * -2}deg) rotateY(${dx * 2}deg)`;
       }
 
-      // Spotlight glow update
+      // Spotlight glow
       if (glowRef.current) {
         glowRef.current.style.setProperty("--glow-x", `${(normX * 100).toFixed(1)}%`);
         glowRef.current.style.setProperty("--glow-y", `${(normY * 100).toFixed(1)}%`);
@@ -177,32 +149,42 @@ export default function CinematicVideo() {
     };
 
     const handleScroll = () => {
+      isScrolling = true;
+      const video = videoRef.current;
+      if (video && !video.paused) {
+        video.pause();
+      }
       updateTargetTime();
+
+      if (scrollDebounceTimer) clearTimeout(scrollDebounceTimer);
+      scrollDebounceTimer = setTimeout(() => {
+        isScrolling = false;
+        // Resume ambient continuous playback once user stops scrolling
+        const v = videoRef.current;
+        if (v && v.paused && !isReducedMotion) {
+          v.play().catch(() => {});
+        }
+      }, 350);
     };
 
     window.addEventListener("mousemove", handleMouseMove, { passive: true });
     window.addEventListener("scroll", handleScroll, { passive: true });
 
-    // 4. LERP Seeking Loop in RAF
+    // 4. LERP Loop in RAF
     let lastDebugUpdate = 0;
 
     const loop = (now: number) => {
       const video = videoRef.current;
       if (video) {
         if (readyRef.current && video.duration) {
-          // Watchdog: recover isSeeking flag if browser dropped seeked event
-          if (isSeekingRef.current && now - lastSeekTimeRef.current > 120) {
-            isSeekingRef.current = false;
-            if (pendingTimeRef.current !== null) {
-              const nextTime = pendingTimeRef.current;
-              pendingTimeRef.current = null;
-              performSeek(nextTime);
-            }
+          if (isScrolling) {
+            // While actively scrolling, smoothly LERP towards the target timestamp
+            currentRef.current += (targetRef.current - currentRef.current) * 0.12;
+            performSeek(currentRef.current);
+          } else {
+            // When ambiently playing, keep reference time in sync
+            currentRef.current = video.currentTime;
           }
-
-          // LERP: current += (target - current) * 0.10
-          currentRef.current += (targetRef.current - currentRef.current) * 0.10;
-          performSeek(currentRef.current);
         }
 
         // Throttle debug HUD updates to ~10fps
@@ -225,6 +207,7 @@ export default function CinematicVideo() {
     return () => {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("scroll", handleScroll);
+      if (scrollDebounceTimer) clearTimeout(scrollDebounceTimer);
       if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
     };
   }, [isReducedMotion, isTouchOrSmall]);
@@ -273,11 +256,11 @@ export default function CinematicVideo() {
             poster="/video/poster.jpg"
             playsInline
             muted
+            autoPlay
+            loop
             preload="auto"
             onLoadedMetadata={handleVideoMetadata}
             onCanPlay={handleVideoMetadata}
-            onSeeking={handleSeeking}
-            onSeeked={handleSeeked}
             className="absolute inset-0 w-full h-full object-cover object-center opacity-100"
           />
 
