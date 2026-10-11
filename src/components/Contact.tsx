@@ -45,7 +45,7 @@ const SOCIAL_ICONS: Record<string, React.ReactNode> = {
   x: <XIcon />,
 };
 
-const AGENCY_EMAIL = "contact@dizidice.com";
+const AGENCY_EMAIL = "rahul@dizidice.com";
 const WHATSAPP_URL = "https://wa.me/?text=Hi%20Rahul,%20I%20would%20like%20to%20discuss%20a%20growth%20system%20for%20my%20business.";
 
 export default function Contact() {

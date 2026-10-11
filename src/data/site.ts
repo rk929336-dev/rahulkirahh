@@ -387,7 +387,7 @@ export const SITE = {
   social: [
     {
       platform: "Instagram",
-      url: "https://instagram.com/rahulkirahh",
+      url: "https://instagram.com/rahul_ki_rahh",
       icon: "instagram",
     },
     {

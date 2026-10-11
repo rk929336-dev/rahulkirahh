@@ -82,7 +82,7 @@ const jsonLdPerson = {
   sameAs: [
     "https://www.linkedin.com/in/rahul-ki-rahh/",
     "https://x.com/rahul_ki_rahh",
-    "https://instagram.com/rahulkirahh",
+    "https://instagram.com/rahul_ki_rahh",
     "https://www.facebook.com/rk929336/",
   ],
   worksFor: {
