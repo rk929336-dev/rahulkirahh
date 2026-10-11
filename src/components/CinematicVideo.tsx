@@ -29,6 +29,11 @@ export default function CinematicVideo() {
     targetTime: 0,
   });
 
+  // Seek Queue Refs to eliminate decoder thrashing & frame hallucination
+  const isSeekingRef = useRef<boolean>(false);
+  const pendingTimeRef = useRef<number | null>(null);
+  const lastSeekTimeRef = useRef<number>(0);
+
   // 1. Reduced Motion & Touch Detection
   useEffect(() => {
     const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -65,6 +70,53 @@ export default function CinematicVideo() {
     }));
   };
 
+  // Perform seek with decoder queue guard
+  const performSeek = (targetTime: number) => {
+    const video = videoRef.current;
+    if (!video || !readyRef.current || !video.duration) return;
+
+    const duration = video.duration;
+    const clampedTime = Math.max(0, Math.min(targetTime, duration - 0.05));
+
+    // If hardware decoder is currently busy seeking, store as pending and DO NOT interrupt
+    if (video.seeking || isSeekingRef.current) {
+      pendingTimeRef.current = clampedTime;
+      return;
+    }
+
+    // Guard against micro-seek thrash: skip if delta is under ~half a frame (< 0.02s)
+    if (Math.abs(video.currentTime - clampedTime) < 0.02) {
+      return;
+    }
+
+    isSeekingRef.current = true;
+    lastSeekTimeRef.current = performance.now();
+
+    try {
+      if ("fastSeek" in video && typeof (video as any).fastSeek === "function") {
+        (video as any).fastSeek(clampedTime);
+      } else {
+        video.currentTime = clampedTime;
+      }
+    } catch {
+      isSeekingRef.current = false;
+    }
+  };
+
+  const handleSeeked = () => {
+    isSeekingRef.current = false;
+    // Dispatch queued seek immediately after previous decode completes
+    if (pendingTimeRef.current !== null) {
+      const nextTime = pendingTimeRef.current;
+      pendingTimeRef.current = null;
+      performSeek(nextTime);
+    }
+  };
+
+  const handleSeeking = () => {
+    isSeekingRef.current = true;
+  };
+
   // 3. Scroll & Mouse Tracking Engine
   useEffect(() => {
     if (isReducedMotion) return;
@@ -87,11 +139,13 @@ export default function CinematicVideo() {
 
       if (duration > 0) {
         if (isTouchOrSmall) {
-          // Mobile / Touch: drive by scroll only
+          // Mobile / Touch: smooth 1:1 scroll scrubbing
           targetRef.current = scrollProgress * duration;
         } else {
-          // Desktop: 60% cursor X, 40% scroll progress
-          targetRef.current = (cursorX * 0.6 + scrollProgress * 0.4) * duration;
+          // Desktop: Scroll drives full story timeline; cursor X adds ±8% interactive 3D turntable micro-rotation
+          const cursorParallaxBias = (cursorX - 0.5) * 0.16;
+          const combinedProgress = Math.min(Math.max(scrollProgress + cursorParallaxBias, 0), 1);
+          targetRef.current = combinedProgress * duration;
         }
       }
     };
@@ -136,16 +190,19 @@ export default function CinematicVideo() {
       const video = videoRef.current;
       if (video) {
         if (readyRef.current && video.duration) {
-          // LERP: current += (target - current) * 0.10
-          currentRef.current += (targetRef.current - currentRef.current) * 0.1;
-
-          if (Math.abs(video.currentTime - currentRef.current) > 0.001) {
-            try {
-              video.currentTime = currentRef.current;
-            } catch {
-              // Safe fallback during seek
+          // Watchdog: recover isSeeking flag if browser dropped seeked event
+          if (isSeekingRef.current && now - lastSeekTimeRef.current > 120) {
+            isSeekingRef.current = false;
+            if (pendingTimeRef.current !== null) {
+              const nextTime = pendingTimeRef.current;
+              pendingTimeRef.current = null;
+              performSeek(nextTime);
             }
           }
+
+          // LERP: current += (target - current) * 0.10
+          currentRef.current += (targetRef.current - currentRef.current) * 0.10;
+          performSeek(currentRef.current);
         }
 
         // Throttle debug HUD updates to ~10fps
@@ -219,6 +276,8 @@ export default function CinematicVideo() {
             preload="auto"
             onLoadedMetadata={handleVideoMetadata}
             onCanPlay={handleVideoMetadata}
+            onSeeking={handleSeeking}
+            onSeeked={handleSeeked}
             className="absolute inset-0 w-full h-full object-cover object-center opacity-100"
           />
 
