@@ -14,7 +14,7 @@ export default function Footer() {
         </div>
 
         <div className="text-slate-500">
-          © {new Date().getFullYear()} {SITE.person.name}. Systems over tactics.
+          Copyright © {new Date().getFullYear()} by DiziDice. All Rights Reserved
         </div>
 
         <div className="flex items-center gap-5">
