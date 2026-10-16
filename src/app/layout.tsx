@@ -126,6 +126,25 @@ export default function RootLayout({
           <CustomCursor />
           {children}
         </LenisProvider>
+        {/* Google tag (gtag.js) */}
+        <Script
+          src="https://www.googletagmanager.com/gtag/js?id=G-Y883SZX5DG"
+          strategy="afterInteractive"
+        />
+        <Script
+          id="google-analytics"
+          strategy="afterInteractive"
+          dangerouslySetInnerHTML={{
+            __html: `
+              window.dataLayer = window.dataLayer || [];
+              function gtag(){dataLayer.push(arguments);}
+              gtag('js', new Date());
+              gtag('config', 'G-Y883SZX5DG');
+            `,
+          }}
+        />
+
+        {/* Chatwoot Live Chat SDK */}
         <Script
           id="chatwoot-sdk"
           strategy="afterInteractive"
