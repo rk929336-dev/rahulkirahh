@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Space_Grotesk } from "next/font/google";
 import "./globals.css";
+import Script from "next/script";
 import { SITE } from "@/data/site";
 import LenisProvider from "@/components/LenisProvider";
 import CustomCursor from "@/components/CustomCursor";
@@ -125,6 +126,27 @@ export default function RootLayout({
           <CustomCursor />
           {children}
         </LenisProvider>
+        <Script
+          id="chatwoot-sdk"
+          strategy="afterInteractive"
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function(d,t) {
+                var BASE_URL="https://chatwoot.dizidice.com";
+                var g=d.createElement(t),s=d.getElementsByTagName(t)[0];
+                g.src=BASE_URL+"/packs/js/sdk.js";
+                g.async = true;
+                s.parentNode.insertBefore(g,s);
+                g.onload=function(){
+                  window.chatwootSDK.run({
+                    websiteToken: 'ZvUtWyJ4bwQfhTpcePw9skGb',
+                    baseUrl: BASE_URL
+                  })
+                }
+              })(document,"script");
+            `,
+          }}
+        />
       </body>
     </html>
   );
